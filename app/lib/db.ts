@@ -1,6 +1,5 @@
 import { Pool, PoolClient } from "pg";
 
-import { sql } from "@vercel/postgres";
 import { config } from "dotenv";
 
 // Load environment variables

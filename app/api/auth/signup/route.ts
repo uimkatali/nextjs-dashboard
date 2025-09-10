@@ -32,6 +32,16 @@ async function logSignupAttempt(
   `;
 }
 
+export async function testDatabaseConnection() {
+  try {
+    await sql`SELECT 1`;
+    return true;
+  } catch (error) {
+    console.error("Database connection test failed:", error);
+    return false;
+  }
+}
+
 export async function executeQuery(query: string, values: any[]) {
   try {
     const result = await sql.query(query, values);
