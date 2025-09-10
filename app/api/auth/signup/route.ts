@@ -1,7 +1,16 @@
 import { NextResponse } from "next/server";
 import bcrypt from "bcrypt";
 import { headers } from "next/headers";
-import { query } from "@/app/lib/db";
+import { query, withTransaction } from "@/app/lib/db";
+import { DatabaseInitializer } from "@/app/lib/db-init";
+
+function sanitizeHeaderValue(value: string | null): string {
+  if (!value) return "unknown";
+  // Sanitize header values to prevent injection
+  return value
+    .replace(/[^\w\s\-\.,:;/]/g, "") // Remove potentially dangerous characters
+    .substring(0, 255); // Limit length
+}
 
 async function logSignupAttempt(
   email: string,
@@ -9,20 +18,34 @@ async function logSignupAttempt(
   error?: string
 ) {
   const headersList = await headers();
-  const ip = headersList.get("x-forwarded-for") || "unknown";
-  const userAgent = headersList.get("user-agent") || "unknown";
+  const rawIp =
+    headersList.get("x-forwarded-for") || headersList.get("x-real-ip");
+  const rawUserAgent = headersList.get("user-agent");
 
-  await query(
-    `INSERT INTO signup_logs (email, success, attempt_time, ip_address, error_message, user_agent)
-		 VALUES ($1, $2, NOW(), $3, $4, $5)`,
-    [email, success, ip, error || null, userAgent]
-  );
+  // Sanitize and validate inputs
+  const ip = sanitizeHeaderValue(rawIp);
+  const userAgent = sanitizeHeaderValue(rawUserAgent);
+  const sanitizedError = error ? error.substring(0, 500) : null; // Limit error message length
+
+  try {
+    await query(
+      `INSERT INTO signup_logs (email, success, attempt_time, ip_address, error_message, user_agent)
+      VALUES ($1, $2, NOW(), $3, $4, $5)`,
+      [email, success, ip, sanitizedError, userAgent]
+    );
+  } catch (logError) {
+    console.error("Failed to log signup attempt:", logError);
+    // Don't throw here - logging should not break the signup process
+  }
 }
 
 export async function POST(request: Request) {
   let email = "unknown";
 
   try {
+    // Ensure all required tables exist before proceeding
+    await DatabaseInitializer.ensureTablesExist();
+
     console.log("Received signup request");
     const { name, email: userEmail, password } = await request.json();
     email = userEmail;
@@ -37,10 +60,47 @@ export async function POST(request: Request) {
       );
     }
 
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      await logSignupAttempt(email, false, "Invalid email format");
+      return NextResponse.json(
+        { success: false, message: "Please enter a valid email address" },
+        { status: 400 }
+      );
+    }
+
+    // Validate password strength
+    if (password.length < 8) {
+      await logSignupAttempt(email, false, "Password too short");
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Password must be at least 8 characters long",
+        },
+        { status: 400 }
+      );
+    }
+
+    // Validate name length and characters
+    if (name.length < 2 || name.length > 100) {
+      await logSignupAttempt(email, false, "Invalid name length");
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Name must be between 2 and 100 characters",
+        },
+        { status: 400 }
+      );
+    }
+
+    // Normalize email for consistency with login
+    const normalizedEmail = String(email).trim().toLowerCase();
+
     // 2. Check if user already exists
     const existingUser = await query<{ id: string }>(
-      "SELECT id FROM users WHERE email = $1",
-      [email]
+      "SELECT id FROM users WHERE lower(email) = $1",
+      [normalizedEmail]
     );
 
     if (existingUser.rows.length > 0) {
@@ -54,11 +114,24 @@ export async function POST(request: Request) {
     // 3. Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // 4. Create user in database
-    await query(
-      "INSERT INTO users (full_name, email, password, created_at) VALUES ($1, $2, $3, NOW())",
-      [name, email, hashedPassword]
-    );
+    // 4. Create user in database with transaction for data integrity
+    await withTransaction(async (client) => {
+      // Double-check user doesn't exist within transaction to prevent race condition
+      const doubleCheck = await client.query(
+        "SELECT id FROM users WHERE lower(email) = $1",
+        [normalizedEmail]
+      );
+
+      if (doubleCheck.rows.length > 0) {
+        throw new Error("Email already registered");
+      }
+
+      // Create user
+      await client.query(
+        "INSERT INTO users (full_name, email, password, created_at) VALUES ($1, $2, $3, NOW())",
+        [name, normalizedEmail, hashedPassword]
+      );
+    });
 
     // Log successful signup
     await logSignupAttempt(email, true);

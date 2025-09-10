@@ -5,7 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 export async function GET(request: NextRequest) {
   try {
     // Get token from cookie or Authorization header
-    const cookieToken = request.cookies.get("auth-token")?.value;
+    const cookieToken = request.cookies.get("session")?.value;
     const headerToken = request.headers
       .get("authorization")
       ?.replace("Bearer ", "");

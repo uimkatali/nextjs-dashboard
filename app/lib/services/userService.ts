@@ -1,5 +1,5 @@
 import { User } from "@/app/types/auth";
-import { db } from "../db";
+import db from "../db";
 
 import bcrypt from "bcrypt";
 

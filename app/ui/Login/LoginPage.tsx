@@ -36,8 +36,6 @@ interface LoginError {
 
 export default function LoginPage() {
   const router = useRouter();
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [formData, setFormData] = useState<LoginFormData>({
     email: "",
@@ -94,13 +92,8 @@ export default function LoginPage() {
       const data = await response.json();
 
       if (data.success) {
-        // Store user data in localStorage (optional)
-        if (typeof window !== "undefined") {
-          localStorage.setItem("user", JSON.stringify(data.user));
-        }
-
-        // Redirect to dashboard or home page
-        router.push("/dashboard");
+        // Redirect to home page
+        router.push("/home");
       } else {
         setError({ message: data.message });
       }
@@ -174,9 +167,13 @@ export default function LoginPage() {
                 id="email"
                 type="email"
                 placeholder="your.email@gym.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="h-12 bg-slate-800/50 border-2 border-slate-700 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/20 transition-all duration-300 text-white placeholder:text-slate-400 backdrop-blur-sm"
+                value={formData.email}
+                onChange={(e) => handleInputChange("email", e.target.value)}
+                className={`h-12 bg-slate-800/50 border-2 focus:ring-2 focus:ring-cyan-400/20 transition-all duration-300 text-white placeholder:text-slate-400 backdrop-blur-sm ${
+                  error?.field === "email"
+                    ? "border-red-400 focus:border-red-400"
+                    : "border-slate-700 focus:border-cyan-400"
+                }`}
               />
             </div>
 
@@ -193,9 +190,15 @@ export default function LoginPage() {
                   id="password"
                   type={showPassword ? "text" : "password"}
                   placeholder="Enter your password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="h-12 bg-slate-800/50 border-2 border-slate-700 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/20 transition-all duration-300 pr-12 text-white placeholder:text-slate-400 backdrop-blur-sm"
+                  value={formData.password}
+                  onChange={(e) =>
+                    handleInputChange("password", e.target.value)
+                  }
+                  className={`h-12 bg-slate-800/50 border-2 focus:ring-2 focus:ring-cyan-400/20 transition-all duration-300 pr-12 text-white placeholder:text-slate-400 backdrop-blur-sm ${
+                    error?.field === "password"
+                      ? "border-red-400 focus:border-red-400"
+                      : "border-slate-700 focus:border-cyan-400"
+                  }`}
                 />
                 <Button
                   type="button"
@@ -214,14 +217,33 @@ export default function LoginPage() {
             </div>
           </div>
 
-          <Button
-            className="w-full h-14 bg-gradient-to-r from-cyan-500 to-pink-500 hover:from-cyan-400 hover:to-pink-400 text-white font-black text-lg uppercase tracking-wider transition-all duration-300 hover:shadow-lg hover:shadow-cyan-500/50 border-2 border-cyan-400/50 hover:border-cyan-300 group relative overflow-hidden"
-            type="submit"
-          >
-            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -skew-x-12 -translate-x-full group-hover:translate-x-full transition-transform duration-700"></div>
-            <Zap className="w-5 h-5 mr-2 group-hover:animate-pulse relative z-10" />
-            <span className="relative z-10">LET'S GO!</span>
-          </Button>
+          {error && (
+            <div className="flex items-center gap-2 p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400">
+              <AlertCircle className="w-4 h-4" />
+              <span className="text-sm font-medium">{error.message}</span>
+            </div>
+          )}
+
+          <form onSubmit={handleSubmit}>
+            <Button
+              className="w-full h-14 bg-gradient-to-r from-cyan-500 to-pink-500 hover:from-cyan-400 hover:to-pink-400 text-white font-black text-lg uppercase tracking-wider transition-all duration-300 hover:shadow-lg hover:shadow-cyan-500/50 border-2 border-cyan-400/50 hover:border-cyan-300 group relative overflow-hidden disabled:opacity-50 disabled:cursor-not-allowed"
+              type="submit"
+              disabled={loading}
+            >
+              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -skew-x-12 -translate-x-full group-hover:translate-x-full transition-transform duration-700"></div>
+              {loading ? (
+                <div className="flex items-center gap-2 relative z-10">
+                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  <span>LOGGING IN...</span>
+                </div>
+              ) : (
+                <>
+                  <Zap className="w-5 h-5 mr-2 group-hover:animate-pulse relative z-10" />
+                  <span className="relative z-10">LET'S GO!</span>
+                </>
+              )}
+            </Button>
+          </form>
 
           <Separator className="bg-slate-700" />
 

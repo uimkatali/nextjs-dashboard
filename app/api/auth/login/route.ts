@@ -1,101 +1,86 @@
-import { JWTService } from "@/app/lib/jwt";
-import { UserService } from "@/app/lib/services/userService";
-import { LoginRequest, LoginResponse } from "@/app/types/auth";
-import { NextRequest, NextResponse } from "next/server";
+// app/api/auth/login/route.ts
+import { NextResponse } from "next/server";
+import { query } from "@/app/lib/db";
+import { DatabaseInitializer } from "@/app/lib/db-init";
+import bcrypt from "bcrypt";
+import crypto from "crypto";
 
-export async function POST(request: NextRequest) {
+export async function POST(request: Request) {
   try {
-    // Initialize table if not exists
-    await UserService.initTable();
+    // Ensure all required tables exist before proceeding
+    await DatabaseInitializer.ensureTablesExist();
 
-    const body: LoginRequest = await request.json();
-    const { email, password } = body;
+    const { email, password } = await request.json();
 
-    // Validation
     if (!email || !password) {
-      return NextResponse.json<LoginResponse>(
-        {
-          success: false,
-          message: "Email and password are required",
-        },
+      return NextResponse.json(
+        { success: false, message: "Email and password are required" },
         { status: 400 }
       );
     }
 
-    // Email format validation
+    // Validate email format
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
-      return NextResponse.json<LoginResponse>(
-        {
-          success: false,
-          message: "Please enter a valid email address",
-        },
+      return NextResponse.json(
+        { success: false, message: "Please enter a valid email address" },
         { status: 400 }
       );
     }
 
+    // Normalize email
+    const normalizedEmail = String(email).trim().toLowerCase();
+
     // Find user
-    const user = await UserService.findByEmail(email);
-    if (!user) {
-      return NextResponse.json<LoginResponse>(
-        {
-          success: false,
-          message: "Invalid email or password",
-        },
-        { status: 401 }
-      );
-    }
-
-    // Verify password
-    const isValidPassword = await UserService.verifyPassword(
-      password,
-      user.password
+    const userRes = await query<{ id: number; password: string }>(
+      "SELECT id, password FROM users WHERE lower(email) = $1",
+      [normalizedEmail]
     );
-    if (!isValidPassword) {
-      return NextResponse.json<LoginResponse>(
-        {
-          success: false,
-          message: "Invalid email or password",
-        },
+
+    if (userRes.rowCount === 0) {
+      return NextResponse.json(
+        { success: false, message: "Invalid email or password" },
         { status: 401 }
       );
     }
 
-    // Generate JWT token
-    const token = JWTService.sign({
-      userId: user.id,
-      email: user.email,
-    });
+    const user = userRes.rows[0];
+    const ok = await bcrypt.compare(password, user.password);
 
-    // Create response
-    const response = NextResponse.json<LoginResponse>({
+    if (!ok) {
+      return NextResponse.json(
+        { success: false, message: "Invalid email or password" },
+        { status: 401 }
+      );
+    }
+
+    // Create session (opaque token)
+    const token = crypto.randomBytes(32).toString("hex");
+    const expiresAt = new Date(Date.now() + 1000 * 60 * 60 * 24 * 7); // 7 days
+
+    await query(
+      "INSERT INTO sessions (user_id, token, expires_at, created_at) VALUES ($1, $2, $3, NOW())",
+      [user.id, token, expiresAt]
+    );
+
+    const res = NextResponse.json({
       success: true,
       message: "Login successful",
-      user: {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-      },
-      token,
     });
 
-    // Set HTTP-only cookie for security
-    response.cookies.set("auth-token", token, {
+    res.cookies.set("session", token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
-      maxAge: 60 * 60 * 24 * 7, // 7 days
       path: "/",
+      expires: expiresAt,
     });
 
-    return response;
+    return res;
   } catch (error) {
     console.error("Login error:", error);
-    return NextResponse.json<LoginResponse>(
-      {
-        success: false,
-        message: "Internal server error",
-      },
+    return NextResponse.json(
+      { success: false, message: "Internal server error" },
       { status: 500 }
     );
   }
