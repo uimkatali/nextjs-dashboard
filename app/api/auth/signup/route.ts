@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { sql } from "@vercel/postgres";
 import bcrypt from "bcrypt";
 import { headers } from "next/headers";
+import { query } from "@/app/lib/db";
 
 async function logSignupAttempt(
   email: string,
@@ -12,44 +12,11 @@ async function logSignupAttempt(
   const ip = headersList.get("x-forwarded-for") || "unknown";
   const userAgent = headersList.get("user-agent") || "unknown";
 
-  await sql`
-    INSERT INTO signup_logs (
-      email, 
-      success, 
-      attempt_time, 
-      ip_address, 
-      error_message,
-      user_agent
-    )
-    VALUES (
-      ${email}, 
-      ${success}, 
-      NOW(), 
-      ${ip}, 
-      ${error || null},
-      ${userAgent}
-    )
-  `;
-}
-
-export async function testDatabaseConnection() {
-  try {
-    await sql`SELECT 1`;
-    return true;
-  } catch (error) {
-    console.error("Database connection test failed:", error);
-    return false;
-  }
-}
-
-export async function executeQuery(query: string, values: any[]) {
-  try {
-    const result = await sql.query(query, values);
-    return result;
-  } catch (error) {
-    console.error("Database query error:", error);
-    throw error;
-  }
+  await query(
+    `INSERT INTO signup_logs (email, success, attempt_time, ip_address, error_message, user_agent)
+		 VALUES ($1, $2, NOW(), $3, $4, $5)`,
+    [email, success, ip, error || null, userAgent]
+  );
 }
 
 export async function POST(request: Request) {
@@ -57,13 +24,12 @@ export async function POST(request: Request) {
 
   try {
     console.log("Received signup request");
-    const { fullName, email: userEmail, password } = await request.json();
+    const { name, email: userEmail, password } = await request.json();
     email = userEmail;
 
     // 1. Validate input
-    // Log input validation
     console.log("Validating input for:", email);
-    if (!fullName || !email || !password) {
+    if (!name || !email || !password) {
       await logSignupAttempt(email, false, "Missing required fields");
       return NextResponse.json(
         { success: false, message: "Missing required fields" },
@@ -72,9 +38,10 @@ export async function POST(request: Request) {
     }
 
     // 2. Check if user already exists
-    const existingUser = await sql`
-      SELECT * FROM users WHERE email = ${email}
-    `;
+    const existingUser = await query<{ id: string }>(
+      "SELECT id FROM users WHERE email = $1",
+      [email]
+    );
 
     if (existingUser.rows.length > 0) {
       await logSignupAttempt(email, false, "Email already registered");
@@ -88,10 +55,10 @@ export async function POST(request: Request) {
     const hashedPassword = await bcrypt.hash(password, 10);
 
     // 4. Create user in database
-    await sql`
-      INSERT INTO users (full_name, email, password, created_at)
-      VALUES (${fullName}, ${email}, ${hashedPassword}, NOW())
-    `;
+    await query(
+      "INSERT INTO users (full_name, email, password, created_at) VALUES ($1, $2, $3, NOW())",
+      [name, email, hashedPassword]
+    );
 
     // Log successful signup
     await logSignupAttempt(email, true);
