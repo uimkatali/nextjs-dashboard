@@ -18,11 +18,12 @@ export class DatabaseInitializer {
         this.tableExists("users"),
         this.tableExists("sessions"),
         this.tableExists("user_profiles"),
+        this.tableExists("weight_history"),
       ]);
 
-      const [usersExist, sessionsExist, profilesExist] = tableChecks;
+      const [usersExist, sessionsExist, profilesExist, weightHistoryExist] = tableChecks;
 
-      if (!usersExist || !sessionsExist || !profilesExist) {
+      if (!usersExist || !sessionsExist || !profilesExist || !weightHistoryExist) {
         console.log("Missing required tables, running auto-migration...");
         await this.runMigration();
       }
@@ -136,6 +137,32 @@ export class DatabaseInitializer {
       // Create index for signup logs cleanup and analytics
       await query(`
         CREATE INDEX IF NOT EXISTS idx_signup_logs_attempt_time ON signup_logs(attempt_time)
+      `);
+
+      // Create weight_history table to track all weight changes
+      await query(`
+        CREATE TABLE IF NOT EXISTS weight_history (
+          id SERIAL PRIMARY KEY,
+          user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          weight_type VARCHAR(20) NOT NULL CHECK (weight_type IN ('current_weight', 'goal_weight')),
+          old_value DECIMAL(5,2),
+          new_value DECIMAL(5,2) NOT NULL,
+          changed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `);
+
+      // Create indexes for weight_history queries
+      await query(`
+        CREATE INDEX IF NOT EXISTS idx_weight_history_user_id ON weight_history(user_id)
+      `);
+
+      await query(`
+        CREATE INDEX IF NOT EXISTS idx_weight_history_changed_at ON weight_history(changed_at DESC)
+      `);
+
+      await query(`
+        CREATE INDEX IF NOT EXISTS idx_weight_history_user_type ON weight_history(user_id, weight_type, changed_at DESC)
       `);
 
       console.log("Auto-migration completed successfully");

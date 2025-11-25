@@ -36,7 +36,11 @@ import {
   Weight,
   RotateCcw,
   LogOut,
+  Edit,
+  History,
 } from "lucide-react";
+import EditWeightDialog from "./EditWeightDialog";
+import WeightHistoryDialog from "./WeightHistoryDialog";
 
 interface WorkoutSet {
   weight: number;
@@ -67,10 +71,11 @@ interface HomePageClientProps {
 }
 
 export default function HomePageClient({
-  userStats,
+  userStats: initialUserStats,
   onSaveWorkout,
 }: HomePageClientProps) {
   const router = useRouter();
+  const [userStats, setUserStats] = useState(initialUserStats);
   const [currentWorkout, setCurrentWorkout] = useState<Exercise[]>([]);
   const [newExercise, setNewExercise] = useState({
     name: "",
@@ -80,6 +85,8 @@ export default function HomePageClient({
   });
   const [isWorkoutActive, setIsWorkoutActive] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [isEditWeightOpen, setIsEditWeightOpen] = useState(false);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
 
   const addExercise = () => {
     if (
@@ -159,6 +166,41 @@ export default function HomePageClient({
     }
   };
 
+  const handleSaveWeight = async (
+    currentWeight: number,
+    goalWeight: number
+  ) => {
+    try {
+      const response = await fetch("/api/user/profile", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          currentWeight,
+          goalWeight,
+          weeklyGoal: userStats.weeklyGoal,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        // Update local state
+        setUserStats({
+          ...userStats,
+          currentWeight,
+          goalWeight,
+        });
+      } else {
+        throw new Error(data.message || "Failed to save weight");
+      }
+    } catch (error) {
+      console.error("Save weight error:", error);
+      throw error;
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-blue-950 to-slate-900">
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
@@ -207,7 +249,27 @@ export default function HomePageClient({
               <CardTitle className="text-sm font-medium text-slate-200">
                 Current Weight
               </CardTitle>
-              <Weight className="h-4 w-4 text-cyan-400" />
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6 text-cyan-400 hover:text-cyan-300 hover:bg-cyan-400/10"
+                  onClick={() => setIsHistoryOpen(true)}
+                  title="View weight history"
+                >
+                  <History className="h-3 w-3" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6 text-cyan-400 hover:text-cyan-300 hover:bg-cyan-400/10"
+                  onClick={() => setIsEditWeightOpen(true)}
+                  title="Edit weight"
+                >
+                  <Edit className="h-3 w-3" />
+                </Button>
+                <Weight className="h-4 w-4 text-cyan-400" />
+              </div>
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-cyan-400 drop-shadow-[0_0_10px_rgba(6,182,212,0.5)]">
@@ -217,7 +279,11 @@ export default function HomePageClient({
                 Goal: {userStats.goalWeight}kg
               </p>
               <Progress
-                value={(userStats.currentWeight / userStats.goalWeight) * 100}
+                value={
+                  userStats.goalWeight > userStats.currentWeight
+                    ? (userStats.currentWeight / userStats.goalWeight) * 100
+                    : 100
+                }
                 className="mt-2"
               />
             </CardContent>
@@ -298,20 +364,34 @@ export default function HomePageClient({
                     setNewExercise({ ...newExercise, name: value })
                   }
                 >
-                  <SelectTrigger className="bg-slate-700/50 border-slate-600 text-slate-200">
+                  <SelectTrigger className="bg-slate-700/50 border-slate-600 text-slate-200 data-[placeholder]:text-white">
                     <SelectValue placeholder="Select exercise" />
                   </SelectTrigger>
-                  <SelectContent className="bg-slate-800 border-slate-600">
-                    <SelectItem value="bench-press">Bench Press</SelectItem>
-                    <SelectItem value="squat">Squat</SelectItem>
-                    <SelectItem value="deadlift">Deadlift</SelectItem>
-                    <SelectItem value="overhead-press">
+                  <SelectContent className="bg-slate-800 border-slate-600 text-white">
+                    <SelectItem value="bench-press" className="text-white">
+                      Bench Press
+                    </SelectItem>
+                    <SelectItem value="squat" className="text-white">
+                      Squat
+                    </SelectItem>
+                    <SelectItem value="deadlift" className="text-white">
+                      Deadlift
+                    </SelectItem>
+                    <SelectItem value="overhead-press" className="text-white">
                       Overhead Press
                     </SelectItem>
-                    <SelectItem value="barbell-row">Barbell Row</SelectItem>
-                    <SelectItem value="pull-ups">Pull-ups</SelectItem>
-                    <SelectItem value="dips">Dips</SelectItem>
-                    <SelectItem value="bicep-curls">Bicep Curls</SelectItem>
+                    <SelectItem value="barbell-row" className="text-white">
+                      Barbell Row
+                    </SelectItem>
+                    <SelectItem value="pull-ups" className="text-white">
+                      Pull-ups
+                    </SelectItem>
+                    <SelectItem value="dips" className="text-white">
+                      Dips
+                    </SelectItem>
+                    <SelectItem value="bicep-curls" className="text-white">
+                      Bicep Curls
+                    </SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -518,6 +598,19 @@ export default function HomePageClient({
           </Button>
         </div>
       </div>
+
+      <EditWeightDialog
+        open={isEditWeightOpen}
+        onOpenChange={setIsEditWeightOpen}
+        currentWeight={userStats.currentWeight}
+        goalWeight={userStats.goalWeight}
+        onSave={handleSaveWeight}
+      />
+
+      <WeightHistoryDialog
+        open={isHistoryOpen}
+        onOpenChange={setIsHistoryOpen}
+      />
     </div>
   );
 }

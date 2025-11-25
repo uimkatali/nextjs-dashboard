@@ -69,6 +69,32 @@ export async function GET() {
       CREATE UNIQUE INDEX IF NOT EXISTS idx_user_profiles_user_id ON user_profiles(user_id)
     `);
 
+    // Create weight_history table to track all weight changes
+    await query(`
+      CREATE TABLE IF NOT EXISTS weight_history (
+        id SERIAL PRIMARY KEY,
+        user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        weight_type VARCHAR(20) NOT NULL CHECK (weight_type IN ('current_weight', 'goal_weight')),
+        old_value DECIMAL(5,2),
+        new_value DECIMAL(5,2) NOT NULL,
+        changed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+
+    // Create indexes for weight_history queries
+    await query(`
+      CREATE INDEX IF NOT EXISTS idx_weight_history_user_id ON weight_history(user_id)
+    `);
+
+    await query(`
+      CREATE INDEX IF NOT EXISTS idx_weight_history_changed_at ON weight_history(changed_at DESC)
+    `);
+
+    await query(`
+      CREATE INDEX IF NOT EXISTS idx_weight_history_user_type ON weight_history(user_id, weight_type, changed_at DESC)
+    `);
+
     // Create exercises table
     await query(`
       CREATE TABLE IF NOT EXISTS exercises (
@@ -142,6 +168,7 @@ export async function GET() {
         "sessions",
         "signup_logs",
         "user_profiles",
+        "weight_history",
         "exercises",
         "workouts",
         "workout_exercises",
